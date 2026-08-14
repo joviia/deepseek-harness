@@ -63,6 +63,16 @@ dsh web --help
 
 The production Web runner needs built package and frontend artifacts (`pnpm run build`). It serves `http://127.0.0.1:3080` by default. The CLI intentionally does not support `--host 0.0.0.0` yet and exits with a usage error; `--trusted-host` adds named authorities accepted by the `/api` browser-trust fence.
 
+A successful serve acquires `$DSH_HOME/host.lock` (pid, then the listen URL after bind) so a second `dsh web` against the same home prints the existing URL and exits nonzero. `--help` and rejected flags do not take the lock. The [desktop shell](../../desktop/README.md) attaches to a ready lock instead of starting a second host.
+
+## Desktop
+
+`dsh desktop` is a checkout launcher for [`@deepseek-ai/dsh-desktop`](../../desktop/README.md). It does not boot a profile itself: it starts Electron, which attaches to `$DSH_HOME/host.lock` or spawns `dsh web --host 127.0.0.1 --port 0`. A packaged installer from `pnpm run dist:desktop` is the double-click entry and does not require this command.
+
+```sh
+dsh desktop
+```
+
 Process shutdown gives the plugin tree up to five seconds to dispose. The first `SIGINT`/`SIGTERM` starts that graceful drain — `SIGTERM` is a supervisor's ordinary stop request and exits 0 on every surface, `SIGINT` reports 130; a second signal forces immediate exit. If one-shot normal completion is already stuck in disposal, the first `Ctrl+C` is the escalation and exits immediately instead of being swallowed.
 
 All modes treat the invoking directory as the default workspace root, load applicable `AGENTS.md` or `CLAUDE.md` instructions with a 65,536-byte render budget, and use an in-memory SQLite session content index. Every profile boot watches valid edits of both `cordis.patch.yml` layers (profile and home) and reapplies them transactionally; a one-shot surface exits through its bounded shutdown, which disposes the watchers.

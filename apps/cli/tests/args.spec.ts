@@ -26,6 +26,8 @@ describe('parseDshArgs', () => {
     expect(parse(['--profile', 'tui', '--patch', 'a.yml', '--patch', 'b.yml']))
       .toEqual({ mode: 'profile', profile: 'tui', patches: ['a.yml', 'b.yml'], args: [] })
     expect(parse(['web'])).toEqual({ mode: 'profile', profile: 'web', patches: [], args: [] })
+    expect(parse(['desktop'])).toEqual({ mode: 'desktop', args: [] })
+    expect(parse(['desktop', '--inspect'])).toEqual({ mode: 'desktop', args: ['--inspect'] })
     expect(parse(['web', '--patch', 'web.yml']))
       .toEqual({ mode: 'profile', profile: 'web', patches: ['web.yml'], args: [] })
   })

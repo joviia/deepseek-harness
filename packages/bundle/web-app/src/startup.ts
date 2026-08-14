@@ -9,6 +9,7 @@
 import { Command } from 'commander'
 import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
+import { acquireHostLock, occupiedHostMessage, releaseHostLock } from '@deepseek-ai/dsh-host-lock'
 
 /** Stable Cordis plugin name. */
 export const name = 'web-startup'
@@ -59,7 +60,8 @@ Examples:
  * Parse and provide the Web invocation as an ordinary Cordis service. The
  * command's action publishes the flags this invocation named; `--host 0.0.0.0`
  * or a non-numeric `--port` is a usage error, so on rejection (and on `--help`)
- * nothing is provided.
+ * nothing is provided. A successful parse acquires `$DSH_HOME/host.lock` and
+ * releases it when this fiber disposes.
  * @param ctx - plugin context carrying the command line.
  */
 export function apply(ctx: Context): void {
@@ -72,6 +74,13 @@ export function apply(ctx: Context): void {
     if (options.port !== undefined && !/^\d+$/.test(options.port)) {
       program.error(`error: --port must be a number, got ${JSON.stringify(options.port)}`)
     }
+    const lock = acquireHostLock()
+    if (lock.status === 'occupied') {
+      program.error(occupiedHostMessage(lock.inspection))
+    }
+    ctx.effect(() => () => {
+      releaseHostLock()
+    })
     ctx.provide(WEB_STARTUP_SERVICE, {
       ...options.host !== undefined && { host: options.host },
       ...options.port !== undefined && { port: Number(options.port) },

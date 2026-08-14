@@ -139,6 +139,8 @@
     "demo:acp": "node --import tsx packages/examples/acp-demo/src/bin.ts --config examples/acp-agent/cordis.yml",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "dev:web": "tsx scripts/dev-web.ts --poll",
+    "dev:desktop": "tsc -b apps/desktop && pnpm --filter @deepseek-ai/dsh-desktop exec electron .",
+    "dist:desktop": "pnpm run build && pnpm exec tsx scripts/stage-desktop-runtime.ts && pnpm exec electron-builder --project apps/desktop --publish never",
     "postinstall": "node scripts/install-lefthook.mjs"
   },
   "devDependencies": {
@@ -176,6 +178,7 @@
     "tsdown": "^0.22.2",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",
+    "unrun": "^0.3.1",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.8"
   }

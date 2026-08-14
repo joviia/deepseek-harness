@@ -20,7 +20,7 @@ DeepSeek Harness 目前处于 _开发者预览_ 阶段，正在快速迭代。**
 npx @deepseek-ai/dsh web
 ```
 
-该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。
+该命令会启动 Web UI，默认地址为 `http://127.0.0.1:3080`。详见 [Web UI 指南](docs/user/guide/index.md)。在检出中，`pnpm dsh desktop` 会在 Electron 窗口中打开同一套 UI；`pnpm run dist:desktop` 会为当前平台构建安装包。
 
 ### 从源码运行
 

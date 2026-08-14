@@ -145,6 +145,8 @@
       // host/client package names prefix the group dir (dsh-client-<dir>), so
       // the generic dsh-*/invariant list above cannot map them; strip the
       // group prefix with a dedicated wildcard per group instead.
+      "@deepseek-ai/dsh-host-lock": ["./packages/boot/host-lock/src"],
+      "@deepseek-ai/dsh-host-lock/invariant": ["./packages/boot/host-lock/src/invariant.ts"],
       "@deepseek-ai/dsh-host-*/invariant": ["./packages/host/*/src/invariant.ts"],
       "@deepseek-ai/dsh-client-*/invariant": ["./packages/client/*/src/invariant.ts"],
       "@deepseek-ai/dsh-headless/startup": ["./packages/bundle/headless/src/startup.ts"],

@@ -1,0 +1,33 @@
+{
+  "name": "@deepseek-ai/dsh-desktop",
+  "description": "Electron shell that opens the DeepSeek Harness Web UI in a desktop window",
+  "version": "0.1.0-rc.5",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "apps/desktop"
+  },
+  "type": "module",
+  "main": "lib/main.js",
+  "files": [
+    "lib/*.js"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-home-paths": "workspace:^",
+    "@deepseek-ai/dsh-host-lock": "workspace:^"
+  },
+  "devDependencies": {
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12",
+    "typescript": "^6.0.3"
+  }
+}

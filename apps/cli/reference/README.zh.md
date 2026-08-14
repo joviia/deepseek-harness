@@ -63,6 +63,16 @@ dsh web --help
 
 生产 Web 运行器需要已构建的包和前端产物（`pnpm run build`）。默认服务地址是 `http://127.0.0.1:3080`。CLI 目前有意不支持 `--host 0.0.0.0`，并会以用法错误退出；`--trusted-host` 可添加 `/api` 浏览器信任围栏接受的具名 authority。
 
+一次成功的 serve 会获取 `$DSH_HOME/host.lock`（先写 pid，bind 后再写监听 URL），因此针对同一 home 的第二个 `dsh web` 会打印已有 URL 并以非零状态退出。`--help` 和被拒绝的 flag 不会占用该锁。[桌面壳](../../desktop/README.md) 附着到已就绪的锁，而不是再起一个 Host。
+
+## 桌面
+
+`dsh desktop` 是 [`@deepseek-ai/dsh-desktop`](../../desktop/README.md) 在检出中的启动器。它自己不启动 profile：它拉起 Electron，由 Electron 附着 `$DSH_HOME/host.lock` 或拉起 `dsh web --host 127.0.0.1 --port 0`。`pnpm run dist:desktop` 产出的打包安装包才是双击入口，不需要这条命令。
+
+```sh
+dsh desktop
+```
+
 进程关闭时，插件树最多有 5 秒完成 dispose。首次收到 `SIGINT` 或 `SIGTERM` 时会开始优雅排空：`SIGTERM` 是监督进程发出的常规停止请求，在所有运行模式下都以 0 退出；`SIGINT` 则报告 130。第二次收到信号时会立即强制退出。如果一次性运行在正常结束时已经卡在 dispose 阶段，第一次按下 `Ctrl+C` 就会直接升级为强制退出，而不会被忽略。
 
 所有模式都将运行命令时所在的目录作为默认 workspace 根目录，以 65,536 字节渲染预算加载适用的 `AGENTS.md` 或 `CLAUDE.md` 指令，并使用内存 SQLite 会话内容索引。每次启动 profile 时，系统都会监视 profile 与 home 两个 `cordis.patch.yml` 配置层的有效变更，并以事务方式重新应用；一次性运行模式通过有界关闭流程退出，该流程会先 dispose 监视器。

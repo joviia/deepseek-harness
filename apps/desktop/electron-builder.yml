@@ -1,0 +1,60 @@
+appId: ai.deepseek.harness
+productName: DeepSeek Harness
+copyright: Copyright © DeepSeek AI
+asar: true
+npmRebuild: false
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+directories:
+  output: release
+  buildResources: build
+files:
+  - lib/*.js
+  - package.json
+  - build/icon.png
+afterPack: apps/desktop/after-pack.cjs
+mac:
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: apps/desktop/build/entitlements.mac.plist
+  entitlementsInherit: apps/desktop/build/entitlements.mac.plist
+  signIgnore:
+    - \.(?:css|eot|html|jpg|json|map|md|otf|png|svg|ts|ttf|txt|webp|woff2?|ya?ml)$
+    - LICENSE
+  icon: build/icon.icns
+  target:
+    - dmg
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+linux:
+  category: Development
+  icon: build/icon.png
+  target:
+    - AppImage
+dmg:
+  background: build/background.png
+  icon: build/icon.icns
+  iconSize: 128
+  window:
+    width: 620
+    height: 420
+  contents:
+    - x: 160
+      y: 200
+      type: file
+    - x: 460
+      y: 200
+      type: link
+      path: /Applications
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  installerSidebar: build/installerSidebar.bmp
+  uninstallerSidebar: build/installerSidebar.bmp
+  installerHeader: build/installerHeader.bmp
+electronVersion: 37.2.6

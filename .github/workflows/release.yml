@@ -1,20 +1,19 @@
-# Pack and publish the dsh release sequence: every package under packages/ plus
-# the apps/ entries, all on one version. The vendored framework and the native
-# packages are separate sequences with their own workflows and version lines.
-#
-# Pack runs without credentials on every pull request and master push, so a
-# pull request proves the whole publish set still packs. Publication is a
-# manual dispatch from a dsh-v* tag and consumes exactly the packed bytes.
+# Build click-to-install desktop packages for every supported OS/arch.
+# Pack runs without credentials on every pull request, master push, and
+# dsh-v* tag, so a change proves the installers still build. A tag push or
+# a manual dispatch with publish=true attaches those installers to a GitHub
+# Release. This workflow does not pack or publish npm tarballs.
 name: Release (dsh)
 
 on:
   pull_request:
   push:
     branches: [master]
+    tags: ['dsh-v*']
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish the packed tarballs to npm. Must run from a dsh-v* tag.
+        description: Attach the installers to a GitHub Release. Must run from a dsh-v* tag.
         required: true
         type: boolean
         default: false
@@ -23,21 +22,47 @@ permissions:
   contents: read
 
 concurrency:
-  # Pack runs per ref so concurrent pull requests never displace each
-  # other; the publish job below serializes the shared dist-tag state.
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   PRIMARY_NODE_VERSION: '24'
   DSH_TELEMETRY_DISABLED: '1'
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
 jobs:
   pack:
-    name: Pack npm tarballs
-    runs-on: ubuntu-24.04
+    name: ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: --mac dmg --arm64
+            artifact: desktop-mac-arm64
+            node_arch: arm64
+          - os: macos-15
+            target: --mac dmg --x64
+            artifact: desktop-mac-x64
+            node_arch: x64
+          - os: windows-latest
+            target: --win nsis --x64
+            artifact: desktop-win-x64
+            node_arch: x64
+          - os: ubuntu-24.04
+            target: --linux AppImage --x64
+            artifact: desktop-linux-x64
+            node_arch: x64
+          - os: ubuntu-24.04-arm
+            target: --linux AppImage --arm64
+            artifact: desktop-linux-arm64
+            node_arch: arm64
     steps:
-      # Complete history: the release scripts read tags.
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -66,84 +91,88 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-node-${{ env.PRIMARY_NODE_VERSION }}-pnpm-
 
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/electron
+            ~/.cache/electron-builder
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+            ~/AppData/Local/electron/Cache
+            ~/AppData/Local/electron-builder/Cache
+          key: electron-${{ runner.os }}-${{ matrix.node_arch }}-37.2.6
+
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
 
       - name: Verify release version
-        env:
-          RELEASE_PUBLISH: ${{ inputs.publish }}
         run: pnpm run release:verify --family dsh
 
       - name: Build
         run: pnpm run build
 
-      - name: Pack release tarballs
-        run: pnpm run release:pack --family dsh --out dist/npm
+      - name: Stage harness runtime
+        env:
+          DSH_DESKTOP_NODE_ARCH: ${{ matrix.node_arch }}
+        run: pnpm exec tsx scripts/stage-desktop-runtime.ts
 
-      # The harness packages declare the vendored framework as a peer, and this
-      # verification must not depend on the registry already carrying matching
-      # versions — one pull request may bump both families before either
-      # publishes — so it installs that family's pack output too. Only dist/npm
-      # is published.
-      - name: Pack the vendored framework for verification
-        run: pnpm run release:pack --family vendor --out dist/npm-vendor
-
-      # dsh-sandbox-local declares the Landlock entry as a runtime dependency, so
-      # the verification needs its tarball. Its platform packages stay out: they
-      # are optional, and building them needs a musl toolchain per architecture.
-      - name: Pack the Landlock entry for verification
-        run: |
-          pnpm --dir native/landlock-run run build:ts
-          pnpm --dir native/landlock-run/packages/entry pack --pack-destination "$PWD/dist/npm-landlock"
-
-      - name: Verify packed install
-        run: pnpm run release:verify-packed-install --family dsh --from dist/npm --from dist/npm-vendor --from dist/npm-landlock
+      - name: Pack installer
+        env:
+          DSH_DESKTOP_NODE_ARCH: ${{ matrix.node_arch }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: ./apps/desktop/node_modules/.bin/electron-builder --project apps/desktop --publish never ${{ matrix.target }}
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dsh-npm-tarballs
-          path: dist/npm/*
+          name: ${{ matrix.artifact }}
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.AppImage
           if-no-files-found: error
           retention-days: 7
 
   publish:
-    name: Publish to npm
-    if: inputs.publish
+    name: Attach installers to GitHub Release
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/dsh-v'))
+      || (github.event_name == 'workflow_dispatch' && inputs.publish)
     needs: pack
     runs-on: ubuntu-24.04
-    # Required reviewers and the allowed tags live on the environment; this is
-    # the only step in the sequence that can write to the registry.
-    environment: npm-publish
-    concurrency:
-      group: Release-publish
-      cancel-in-progress: false
     permissions:
-      contents: read
+      contents: write
     steps:
-      # Checkout and install carry the release scripts only. There is no build
-      # step: publication uploads the bytes the pack job produced.
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-
-      - uses: pnpm/action-setup@v4
-        with:
-          dest: ${{ runner.temp }}/setup-pnpm
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.PRIMARY_NODE_VERSION }}
-          registry-url: https://registry.npmjs.org
-
-      - name: Install (immutable, no package scripts)
-        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Require a dsh-v* tag
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/dsh-v*) ;;
+            *)
+              echo "::error::Attaching installers requires a dsh-v* tag, got ${GITHUB_REF}"
+              exit 1
+              ;;
+          esac
 
       - uses: actions/download-artifact@v4
         with:
-          name: dsh-npm-tarballs
-          path: dist/npm
+          pattern: desktop-*
+          path: dist
+          merge-multiple: true
 
-      - name: Publish tarballs
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: pnpm run release:publish --family dsh --from dist/npm
+      - name: Keep only click-to-install packages
+        run: |
+          set -euo pipefail
+          find dist -type f ! \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' \) -delete
+          find dist -type d -empty -delete
+          count=$(find dist -type f | wc -l | tr -d ' ')
+          [ "$count" -gt 0 ] || {
+            echo "::error::No installer files downloaded"
+            exit 1
+          }
+          ls -lh dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

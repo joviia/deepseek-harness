@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { addHarnessSourceSection } from '@deepseek-ai/dsh-app-boot'
+import { publishHostLockUrl } from '@deepseek-ai/dsh-host-lock'
 import * as FrontendStatic from '@deepseek-ai/dsh-host-frontend-static'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
@@ -156,30 +157,32 @@ export function apply(ctx: Context, config: Config): void {
       })
     })
   }
-  if (config.printUrl) {
-    // The URL line is a readiness signal: supervisors (and the keyless CLI
-    // smoke) RPC as soon as they observe it, so it must not print while
-    // sibling rows (the /api route owner) are still mounting. Await Loader
-    // settlement first; a hand-built tree without a Loader prints at once.
-    const printUrl = (): void => {
-      // Reuse the exact LAN snapshot provided to the /api trust fence.
-      const lanCandidate = runtime.lanAddresses[0]
-      const port = ctx.webServer.port
-      console.log(`dsh web: ${localWebUrl(ctx)}${lanCandidate === undefined ? '' : ` (LAN: http://${lanCandidate}:${String(port)})`}`)
-    }
-    // This row's own activation can precede a sibling failure. The app owns
-    // readiness by waiting for its Loader tree, or prints at once in a
-    // hand-built context without Loader.
-    const settled = ctx.get('loader')?.await()
-    if (settled === undefined) printUrl()
-    else {
-      void settled.then(() => {
-        // The tree can be disposed while the boot was in flight (early
-        // SIGTERM); a URL line for a dead server would only mislead, and
-        // reading the torn-down port would turn a clean shutdown into a crash.
-        if (ctx.get('webServer') !== undefined) printUrl()
-      // Loader reports a failed boot; this row only stays quiet.
-      }, () => {})
-    }
+  // The lock URL is a readiness signal for the desktop supervisor (and the
+  // printed line remains one for CLI smokes). Neither may fire while sibling
+  // rows (the /api route owner) are still mounting. Await Loader settlement
+  // first; a hand-built tree without a Loader publishes at once.
+  const announceReady = (): void => {
+    if (ctx.get('webServer')?.port === undefined) return
+    const url = localWebUrl(ctx)
+    publishHostLockUrl(url)
+    if (!config.printUrl) return
+    // Reuse the exact LAN snapshot provided to the /api trust fence.
+    const lanCandidate = runtime.lanAddresses[0]
+    const port = ctx.webServer.port
+    console.log(`dsh web: ${url}${lanCandidate === undefined ? '' : ` (LAN: http://${lanCandidate}:${String(port)})`}`)
+  }
+  // This row's own activation can precede a sibling failure. The app owns
+  // readiness by waiting for its Loader tree, or publishes at once in a
+  // hand-built context without Loader.
+  const settled = ctx.get('loader')?.await()
+  if (settled === undefined) announceReady()
+  else {
+    void settled.then(() => {
+      // The tree can be disposed while the boot was in flight (early
+      // SIGTERM); a URL line for a dead server would only mislead, and
+      // reading the torn-down port would turn a clean shutdown into a crash.
+      if (ctx.get('webServer') !== undefined) announceReady()
+    // Loader reports a failed boot; this row only stays quiet.
+    }, () => {})
   }
 }

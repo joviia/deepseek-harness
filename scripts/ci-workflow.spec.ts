@@ -235,6 +235,68 @@ describe('E2B e2e workflow', () => {
   })
 })
 
+describe('Dsh release workflow', () => {
+  it('packs click-to-install desktop packages on push and does not publish npm tarballs', () => {
+    const workflow = loadWorkflow('.github/workflows/release.yml')
+    const push = workflowEvent(workflow, 'push')
+    const dispatch = workflowEvent(workflow, 'workflow_dispatch')
+    const pack = workflowJob(workflow, 'pack')
+    const publish = workflowJob(workflow, 'publish')
+    if (!isRecord(dispatch.inputs)
+      || !isRecord(dispatch.inputs.publish)
+      || !isRecord(pack.strategy)
+      || !isRecord(pack.strategy.matrix)
+      || !Array.isArray(pack.strategy.matrix.include)
+      || !Array.isArray(pack.steps)
+      || !Array.isArray(publish.steps)) {
+      throw new TypeError('dsh release workflow must define publish input, pack matrix, and steps')
+    }
+
+    expect(push.branches).toEqual(['master'])
+    expect(push.tags).toEqual(['dsh-v*'])
+    expect(dispatch.inputs.publish).toMatchObject({ type: 'boolean', default: false })
+    expect(workflow.env).toMatchObject({ CSC_IDENTITY_AUTO_DISCOVERY: 'false' })
+
+    const platforms = pack.strategy.matrix.include.filter(isRecord)
+    expect(platforms.map(row => row.artifact)).toEqual([
+      'desktop-mac-arm64',
+      'desktop-mac-x64',
+      'desktop-win-x64',
+      'desktop-linux-x64',
+      'desktop-linux-arm64',
+    ])
+    expect(platforms.map(row => row.target)).toEqual([
+      '--mac dmg --arm64',
+      '--mac dmg --x64',
+      '--win nsis --x64',
+      '--linux AppImage --x64',
+      '--linux AppImage --arm64',
+    ])
+    expect(JSON.stringify(pack.steps)).toContain('DSH_DESKTOP_NODE_ARCH')
+    expect(JSON.stringify(pack.steps)).not.toContain('release:pack')
+    expect(JSON.stringify(pack.steps)).not.toContain('release:publish')
+    expect(JSON.stringify(pack.steps)).toContain('apps/desktop/release/*.dmg')
+    expect(JSON.stringify(pack.steps)).toContain('apps/desktop/release/*.exe')
+    expect(JSON.stringify(pack.steps)).toContain('apps/desktop/release/*.AppImage')
+    expect(JSON.stringify(pack.steps)).not.toContain('dist/npm')
+
+    const setups = pack.steps.filter((step): step is Record<string, unknown> => (
+      isRecord(step) && typeof step.uses === 'string' && step.uses.startsWith('pnpm/action-setup@')
+    ))
+    expect(setups).toEqual([
+      expect.objectContaining({ with: { dest: runnerPrivatePnpmDestination } }),
+    ])
+
+    expect(publish.if).toContain("startsWith(github.ref, 'refs/tags/dsh-v')")
+    expect(publish.permissions).toMatchObject({ contents: 'write' })
+    expect(JSON.stringify(publish.steps)).toContain('action-gh-release')
+    expect(JSON.stringify(publish.steps)).not.toContain('NPM_TOKEN')
+    expect(JSON.stringify(publish.steps)).toContain('*.dmg')
+    expect(JSON.stringify(publish.steps)).toContain('*.exe')
+    expect(JSON.stringify(publish.steps)).toContain('*.AppImage')
+  })
+})
+
 describe('Python release workflows', () => {
   it('keeps complete wheel validation separate from protected public publication', () => {
     const workflow = loadWorkflow('.github/workflows/python-release.yml')

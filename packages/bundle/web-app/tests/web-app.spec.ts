@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
+import { acquireHostLock, inspectHostLock, releaseHostLock } from '@deepseek-ai/dsh-host-lock'
 import { apply, Config, internals } from '../src/index.ts'
 
 vi.mock('node:os', async importOriginal => ({
@@ -105,6 +106,30 @@ describe('web-app runtime glue', () => {
     const webRuntime = contributions.find(contribution => contribution.name === 'web-runtime')
     expect(webRuntime?.resolve()).toEqual({ DSH_WEB_URL: 'http://127.0.0.1:4567' })
     await ctx.fiber.dispose()
+  })
+
+  it('publishes the listen URL into a lock this process owns', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-web-app-lock-'))
+    const previousHome = process.env.DSH_HOME
+    process.env.DSH_HOME = home
+    try {
+      expect(acquireHostLock(home).status).toBe('acquired')
+      stageDist()
+      const ctx = new Context()
+      ctx.provide('webServer', fakeHttpServer().server)
+      apply(ctx, new Config({ printUrl: false, surfaceContext: false, trustedHosts: [] }))
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(inspectHostLock(home)).toMatchObject({
+        status: 'ready',
+        record: { pid: process.pid, url: 'http://127.0.0.1:4567' },
+      })
+      await ctx.fiber.dispose()
+      expect(releaseHostLock(home)).toBe(true)
+    } finally {
+      if (previousHome === undefined) delete process.env.DSH_HOME
+      else process.env.DSH_HOME = previousHome
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it('stays quiet with printUrl off', async () => {
